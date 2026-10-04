@@ -1,4 +1,4 @@
-# Bihar Dataset
+# Data Wrangling Exercise (Bihar Dataset)
 Lahari KV
 
 # Intro
