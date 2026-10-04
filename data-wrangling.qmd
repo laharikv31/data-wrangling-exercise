@@ -1,0 +1,211 @@
+---
+title: "Bihar Dataset"
+author: Lahari KV
+format: 
+  html:
+    embed-resources: true
+execute: 
+  echo: true
+  warning: false
+---
+
+# Intro
+
+**This exercise, based on a census data set containing about 40,000 villages in Bihar, demonstrates basic data wrangling skills such as data cleaning, creation of new columns, calculating summary statistics, and producing graphs from the data available.**
+
+## Importing relevant libraries
+
+```{r}
+
+library(tidyverse)
+library(janitor)
+library(infer)
+library(readxl)
+```
+
+## Loading the dataset
+
+```{r}
+bihar <- read_excel("/Users/laharikv/Downloads/bihar.xlsx")
+head(bihar)
+```
+
+## Cleaning the dataset (standardising column names)
+
+```{r}
+bihar_cleaned <- bihar |> clean_names()
+```
+
+# Task 1
+
+**Compute descriptive statistics for village population, and build one derived variable to look at gender balance.**
+
+```{r}
+summary <- bihar_cleaned |> summarise(
+  mean_population = mean(total_population_of_village, na.rm = TRUE),
+  median_population = median(total_population_of_village, na.rm = TRUE),
+  sd_population = sd(total_population_of_village, na.rm = TRUE),
+  iqr_population = IQR(total_population_of_village, na.rm = TRUE),
+  n = sum(!is.na(total_population_of_village))
+)
+
+summary
+```
+
+```{r}
+
+bihar_1 <- bihar_cleaned |>
+  filter(
+    !is.na(total_female_population_of_village) &
+    !is.na(total_male_population_of_village) &
+    total_male_population_of_village > 0
+  ) |>
+  mutate(
+    sex_ratio =
+      total_female_population_of_village /
+      total_male_population_of_village * 1000
+  )
+
+bihar_1 |> filter(!is.na(sex_ratio)) |> summarise(
+  mean_sex_ratio = mean(sex_ratio)
+)
+
+```
+
+**Our typical village has about 2057 people (using the mean as our measure of “typical”), based on n = 44874 villages with non-missing data). The population distribution is right skewed. The sex ratio in our sample averages 930 females per 1,000 males.**
+
+# Task 2
+
+Population and school access
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+bihar_2 <- bihar_cleaned |>
+  mutate(
+    school_status = case_when(
+      as.character(govt_secondary_school_status_a_1_na_2) %in%
+        c("A(1)", "1") ~ "Available",
+      as.character(govt_secondary_school_status_a_1_na_2) %in%
+        c("NA(2)", "2") ~ "Not available",
+      TRUE ~ "Unknown"
+    )
+  )
+# Count villages in each group, including Unknown
+bihar_2 |> count(school_status)
+```
+
+```{r}
+# Median population and number of villages in each known group
+bihar_2 |>
+  filter(school_status != "Unknown",
+         !is.na(total_population_of_village)) |>
+  group_by(school_status) |>
+  summarise(
+    villages = n(),
+    median_population = median(total_population_of_village),
+    .groups = "drop"
+  )
+
+```
+
+```{r}
+
+# Number excluded because school status is Unknown
+bihar_2 |>
+  summarise(
+    unknown_excluded = sum(school_status == "Unknown")
+  )
+```
+
+```{r}
+# Side-by-side boxplots
+bihar_2 |>
+  filter(
+    school_status != "Unknown",
+    !is.na(total_population_of_village)
+  ) |>
+  ggplot(aes(x = school_status, y = total_population_of_village)) +
+  geom_boxplot() +
+  labs(
+    x = "Government secondary school",
+    y = "Village population"
+  )
+```
+
+**Villages with a government secondary school have a median population of 3089 compared with 1085 for villages without one (villages were Unknown/missing on this variable and excluded).**
+
+**There are multiple outliers in both groups.**
+
+# Task 3 
+
+**Check whether bigger villages tend to sit closer to, or farther from, the nearest town.**
+
+```{r}
+task3 <- bihar_cleaned |> filter(!is.na(total_population_of_village), !is.na(nearest_statutory_town_distance_in_km)) |> summarise(
+  totalrows = n()
+) 
+
+task3
+```
+
+```{r}
+bihar_cleaned |>
+  filter(
+    !is.na(total_population_of_village),
+    !is.na(nearest_statutory_town_distance_in_km)
+  ) |>
+  ggplot(aes(
+    x = total_population_of_village,
+    y = nearest_statutory_town_distance_in_km
+  )) +
+  geom_point() +
+  labs(
+    x = "Village population",
+    y = "Distance to nearest statutory town (km)"
+  )
+```
+
+**The general trend seems to be: higher the population, lesser the distance. But outliers exist.**
+
+# Task 4 
+
+**Do schools and roads travel together?**
+
+```{r}
+bihar_4 <- bihar_cleaned |>
+  mutate(
+    primary_school = case_when(
+      as.character(govt_primary_school_status_a_1_na_2) %in% c("1", "A(1)") ~ "Available",
+      as.character(govt_primary_school_status_a_1_na_2) %in% c("2", "NA(2)") ~ "Not available",
+      TRUE ~ "Unknown"
+    ),
+    paved_road = case_when(
+      as.character(black_topped_pucca_road_status_a_1_na_2) %in% c("1", "A(1)") ~ "Available",
+      as.character(black_topped_pucca_road_status_a_1_na_2) %in% c("2", "NA(2)") ~ "Not available",
+      TRUE ~ "Unknown"
+    )
+  )
+
+bihar_4 |>
+  count(paved_road, primary_school)
+```
+
+```{r}
+bihar_4 |>
+  summarise(
+    excluded = sum(paved_road == "Unknown" | primary_school == "Unknown")
+  )
+```
+
+```{r}
+bihar_4 |>
+  filter(paved_road != "Unknown", primary_school != "Unknown") |>
+  count(paved_road, primary_school) |>
+  group_by(paved_road) |>
+  mutate(row_percent = n / sum(n) * 100) |>
+  ungroup()
+```
+
+**Among villages with a black-topped road, 88% also have a government primary school. Among villages without a paved road, 74% have one. (5804 villages were Unknown on one or both variables and were excluded.)**
