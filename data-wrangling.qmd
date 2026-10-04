@@ -1,9 +1,7 @@
 ---
 title: "Bihar Dataset"
 author: Lahari KV
-format: 
-  html:
-    embed-resources: true
+format: gfm
 execute: 
   echo: true
   warning: false
